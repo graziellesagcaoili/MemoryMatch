@@ -18,6 +18,16 @@ const GameBoard = () => {
     const [lastFlippedIndex, setLastFlippedIndex] = useState(null);
     const [timeoutId, setTimeoutId] = useState(null);
     const [imageUris, setImageUris] = useState([]);
+    const [score, setScore] = useState(0);
+
+
+    useEffect(() => {
+        if (imageUris.length > 0) {
+            saveImages(imageUris);
+        }
+       // console.log("Image URIs: ", imageUris);
+    }, [imageUris]);
+
 
     useEffect(() => {
         // Reset the game
@@ -31,6 +41,13 @@ const GameBoard = () => {
         })();
 
         loadImages();
+
+        AsyncStorage.getItem('highScore').then((value) => {
+            if (value !== null) {
+                // We have data!!
+                console.log("High Score:", value);
+            }
+        });
 
         // Clear the timeout when the component unmounts
         return () => {
@@ -46,9 +63,14 @@ const GameBoard = () => {
         loadImages();
     }, [imagesCollected]);
 
+    useEffect(() => {
+        AsyncStorage.setItem('highScore', JSON.stringify(score));
+    }, [score]);
+
     const collectImages = async () => {
-        let uris = [];
-        for (let i = 0; i < numRows * numColumns / 2; i++) { // Collect half as many pictures as cards
+        const uris = [];
+        // Collect half as many pictures as cards
+        for (let i = 0; i < (numRows * numColumns) / 2; i++) {
             const result = await ImagePicker.launchCameraAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
@@ -58,15 +80,17 @@ const GameBoard = () => {
 
             if (!result.cancelled) {
                 // Add the picture twice for a matching pair
-                uris.push(result.uri);
-                uris.push(result.uri);
+                uris.push(result.assets[0].uri);
+                uris.push(result.assets[0].uri);
             }
         }
 
         setImageUris(uris);
+        saveImages(uris); // Save the collected images to AsyncStorage
         setImagesCollected(true);
-        prepareGameBoard(uris);
+        prepareGameBoard(uris); // Prepare the board with the collected images
     };
+
 
     const prepareGameBoard = (uris) => {
         const shuffledUris = shuffleArray(uris);
@@ -98,12 +122,7 @@ const GameBoard = () => {
                 setImageUris(loadedImageUris);
                 prepareGameBoard(loadedImageUris);
             } else {
-                // If no images are loaded, probably need to take them
-                // Trigger the image taking process
-                // for (let i = 0; i < (numRows * numColumns) / 2; i++) {
-                //   await takePicture(i); // Make sure this is awaited
-                // }
-                takePicture();
+                await takePicture();
             }
         } catch (e) {
             console.error("Failed to load images:", e);
@@ -111,32 +130,37 @@ const GameBoard = () => {
     };
 
 
-    // Function to take a picture
     const takePicture = async () => {
+        //console.log('takePicture called');
         let result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.5,
         });
+        //console.log(result); // Check the result here
 
         if (!result.cancelled) {
-            // Save the new image URI and update state
-            const newImageUris = [...imageUris, result.uri];
-            setImageUris(newImageUris);
-            saveImages(newImageUris);
+            setImageUris(currentImageUris => {
+                // Append the new URI to the existing image URIs
+                const updatedImageUris = [...currentImageUris, result.assets[0].uri];
+                saveImages(updatedImageUris); // Save the updated array
+                return updatedImageUris;
+            });
         }
     };
 
-    // Function to save image URIs to AsyncStorage
-    const saveImages = async (imageUris) => {
+
+
+    const saveImages = async (imageUrisToSave) => {
         try {
-            const jsonValue = JSON.stringify(imageUris);
+            const jsonValue = JSON.stringify(imageUrisToSave);
             await AsyncStorage.setItem('storedImageUris', jsonValue);
         } catch (e) {
-            console.error(e);
+            console.error('Failed to save images:', e);
         }
     };
+
 
     const resetGame = () => {
         // Shuffle cards and reset states
@@ -145,6 +169,29 @@ const GameBoard = () => {
         setMatchedPairs([]);
         setLastFlippedIndex(null);
     };
+
+    const storeScore = async (currentScore) => {
+        try {
+            // Retrieve the current leaderboard from AsyncStorage
+            const leaderboardData = await AsyncStorage.getItem('leaderboard');
+            const leaderboard = leaderboardData ? JSON.parse(leaderboardData) : [];
+
+            // Create a new score entry
+            const newScoreEntry = { player: 'PlayerName', score: currentScore, date: new Date().toISOString() };
+
+            // Add the new score to the leaderboard
+            leaderboard.push(newScoreEntry);
+
+            // Save the updated leaderboard back to AsyncStorage
+            await AsyncStorage.setItem('leaderboard', JSON.stringify(leaderboard));
+
+            // Optionally, update state if you're also keeping track of the leaderboard there
+            setLeaderboard(leaderboard);
+        } catch (error) {
+            console.error('Error storing the score', error);
+        }
+    };
+
 
     const toggleFlip = (index) => {
         if (isFlipped[index]) {
@@ -172,6 +219,10 @@ const GameBoard = () => {
             } else {
                 // Match found
                 setMatchedPairs([...matchedPairs, cards[index]]);
+                if (matchedPairs.length === (numRows * numColumns) / 2) {
+                    // All pairs have been matched, the game is finished.
+                    storeScore(score);
+                }
             }
             setLastFlippedIndex(null);
         }
@@ -218,18 +269,20 @@ const GameBoard = () => {
 };
 
 const styles = StyleSheet.create({
-        container: {
-            flex: 1,
-            justifyContent: 'flex-start', // Align items to the start of the container
-            flexDirection: 'row', // Arrange items in rows
-            flexWrap: 'wrap', // Allow items to wrap to the next line
-            alignItems: 'flex-start', // Align items to the start of the cross axis
-        },
-        cardContainer: {
-            margin: 5, // Space between cards
-            width: Dimensions.get('window').width / numColumns - 10, // Subtract margins
-            height: Dimensions.get('window').height / numRows - 10, // Subtract margins
-        },
+    container: {
+        flex: 1,
+        justifyContent: 'center', // Center children along the main axis
+        alignItems: 'center', // Center children along the cross axis
+        flexDirection: 'row', // Arrange items in a row
+        flexWrap: 'wrap', // Allow items to wrap to the next line
+    },
+    cardContainer: {
+        margin: 5, // Margin around each card
+        width: Dimensions.get('window').width / numColumns - 30, // Width for each card
+        height: Dimensions.get('window').height / numRows - 30, // Height for each card
+        justifyContent: 'center', // Center content inside the card container
+        alignItems: 'center', // Center content inside the card container
+    },
     card: {
         width: '100%',
         height: '100%',

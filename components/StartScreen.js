@@ -1,23 +1,10 @@
 
-/*
- * / filename:  App.js
- * / Author:    Grazielle Agcaoili
- * / brief:     Memory match game assignment for mobile dev
- * / 03/25/2024 - initial page only
- 
- */
-
 import React, { useState, useEffect } from 'react';
 import { Button, SafeAreaView, StyleSheet, Dimensions, Text } from 'react-native';
-import GameBoard from './components/GameBoard';
-import StartScreen from './components/StartScreen';
+import GameBoard from './GameBoard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-const Stack = createNativeStackNavigator();
-
-const App = () => {
+const StartScreen = () => {
     const [gameStarted, setGameStarted] = useState(false);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [leaderboard, setLeaderboard] = useState([]);
@@ -31,12 +18,9 @@ const App = () => {
     }, []);
 
     return (
-        <NavigationContainer>
-            <Stack.Navigator initialRouteName="Matching Game">
-                <Stack.Screen name="Matching Game" component={StartScreen} />
-                <Stack.Screen name="Game" component={GameBoard} />
-            </Stack.Navigator>
-        </NavigationContainer>
+        <SafeAreaView style={styles.container}>
+            <GameBoard />
+        </SafeAreaView>
     );
 }
 
@@ -48,5 +32,5 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
 });
-export default App;
+export default StartScreen;
 
