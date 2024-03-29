@@ -71,7 +71,7 @@ const GameBoard = ({ route, navigation }) => {
 
     const playFlipSound = async () => {
         if (flipSound) {
-            await flipSound.playAsync(); // Use replayAsync to start the sound from the beginning
+            await flipSound.playAsync();
         }
     };
 
@@ -117,7 +117,6 @@ const GameBoard = ({ route, navigation }) => {
 
         AsyncStorage.getItem('highScore').then((value) => {
             if (value !== null) {
-                // We have data!!
                 console.log("High Score:", value);
             }
         });
@@ -177,7 +176,6 @@ const GameBoard = ({ route, navigation }) => {
 
         // While there remain elements to shuffle.
         while (currentIndex != 0) {
-            // Pick a remaining element.
             randomIndex = Math.floor(Math.random() * currentIndex);
             currentIndex--;
 
@@ -216,7 +214,6 @@ const GameBoard = ({ route, navigation }) => {
 
         if (!result.cancelled) {
             setImageUris(currentImageUris => {
-                // Append the new URI to the existing image URIs
                 const updatedImageUris = [...currentImageUris, result.assets[0].uri];
                 saveImages(updatedImageUris); // Save the updated array
                 return updatedImageUris;
@@ -268,7 +265,6 @@ const GameBoard = ({ route, navigation }) => {
 
     const toggleFlip = async (index) => {
         await playFlipSound();
-        // Avoid flipping already matched or flipped cards
         if (isFlipped[index] || matchedPairs.includes(cards[index])) {
             return;
         }
@@ -278,10 +274,9 @@ const GameBoard = ({ route, navigation }) => {
         setIsFlipped(newIsFlipped);
 
         if (lastFlippedIndex == null) {
-            // This is the first card to be flipped
+
             setLastFlippedIndex(index);
         } else {
-            // Another card has already been flipped, check for a match
             if (cards[lastFlippedIndex] === cards[index]) {
                 // Match found
                 handleMatchFound();
@@ -398,7 +393,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         backgroundColor: '#FFC107',
     },
-    // Add any additional styles you need for the shadow or other elements
 });
 
 
