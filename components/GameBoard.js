@@ -1,15 +1,34 @@
-﻿import React, { useState, useEffect } from 'react';
-import { Button,Image, View, Text, StyleSheet, Dimensions, Pressable } from 'react-native';
+﻿
+/*
+ * / filename:  Gameboard.js
+ * / Author:    Grazielle Agcaoili
+ * / brief:     Main gameplay of the game
+ * / 
+ * 03/28/2024 - added haptics, sound, camera, storage
+ 
+ */
+
+
+import React, { useState, useEffect } from 'react';
+import { Alert, Button, Image, View, Text, StyleSheet, Dimensions, Pressable, Vibration } from 'react-native';
 import FlipCard from 'react-native-flip-card';
 import { Camera } from 'expo-camera';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import { Audio } from 'expo-av'
 
-const numColumns = 2;
-const numRows = 2; // Assume a 4x4 grid for simplicity
+
+let numColumns;
+let numRows;
 const size = Dimensions.get('window').width / numColumns;
 
-const GameBoard = () => {
+const GameBoard = ({ route, navigation }) => {
+    const { initials, difficulty } = route.params;
+    const difficultySettings = {
+        easy: { numRows: 2, numColumns: 2 },
+        medium: { numRows: 4, numColumns: 4 },
+        hard: { numRows: 6, numColumns: 6 },
+    };
     const [cards, setCards] = useState([]);
     const [isFlipped, setIsFlipped] = useState([]);
     const [gameStarted, setGameStarted] = useState(false);
@@ -19,6 +38,60 @@ const GameBoard = () => {
     const [timeoutId, setTimeoutId] = useState(null);
     const [imageUris, setImageUris] = useState([]);
     const [score, setScore] = useState(0);
+    const [gameFinished, setGameFinished] = useState(false);
+    const [flipSound, setFlipSound] = useState();
+
+    // Set numRows and numColumns based on the difficulty
+    const { numRows, numColumns } = difficultySettings[difficulty] || difficultySettings.easy;
+
+    const size = Dimensions.get('window').width / numColumns;
+
+    const cardContainerStyle = {
+        ...styles.cardContainer,
+        width: Dimensions.get('window').width / numColumns - 10, // Adjusted for margin
+        height: Dimensions.get('window').width / numColumns - 10, // Square cards, adjusted for margin
+    };
+
+    useEffect(() => {
+        loadSound();
+        // Reminder: unload the sound when component will unmount
+        return () => {
+            if (flipSound) {
+                flipSound.unloadAsync();
+            }
+        };
+    }, []);
+
+    const loadSound = async () => {
+        const { sound } = await Audio.Sound.createAsync(
+            require('../sound/sound1.mp3'), // Path to your sound file
+        );
+        setFlipSound(sound);
+    };
+
+    const playFlipSound = async () => {
+        if (flipSound) {
+            await flipSound.playAsync(); // Use replayAsync to start the sound from the beginning
+        }
+    };
+
+    const promptSaveScore = () => {
+        Alert.alert(
+            "Save High Score",
+            `Your score is ${score}. Would you like to save your high score?`,
+            [
+                {
+                    text: "No",
+                    onPress: () => console.log('High score not saved.'),
+                    style: "cancel"
+                },
+                {
+                    text: "Yes",
+                    onPress: () => storeScore(score, initials)
+                }
+            ]
+        );
+    };
 
 
     useEffect(() => {
@@ -33,7 +106,7 @@ const GameBoard = () => {
         // Reset the game
         resetGame();
 
-        (async () => {
+       (async () => {
             const { status } = await ImagePicker.requestCameraPermissionsAsync();
             if (status !== 'granted') {
                 alert('Sorry, we need camera permissions to make this work!');
@@ -70,7 +143,8 @@ const GameBoard = () => {
     const collectImages = async () => {
         const uris = [];
         // Collect half as many pictures as cards
-        for (let i = 0; i < (numRows * numColumns) / 2; i++) {
+        const totalUniquePicturesNeeded = (numRows * numColumns) / 2;
+        for (let i = 0; i < totalUniquePicturesNeeded; i++) {
             const result = await ImagePicker.launchCameraAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
@@ -170,65 +244,81 @@ const GameBoard = () => {
         setLastFlippedIndex(null);
     };
 
-    const storeScore = async (currentScore) => {
+    const storeScore = async (currentScore, playerInitials) => {
+        const highScoreKey = 'highScore';
         try {
-            // Retrieve the current leaderboard from AsyncStorage
-            const leaderboardData = await AsyncStorage.getItem('leaderboard');
-            const leaderboard = leaderboardData ? JSON.parse(leaderboardData) : [];
+            const highScoreData = await AsyncStorage.getItem(highScoreKey);
+            const highScore = highScoreData ? JSON.parse(highScoreData) : {};
 
-            // Create a new score entry
-            const newScoreEntry = { player: 'PlayerName', score: currentScore, date: new Date().toISOString() };
-
-            // Add the new score to the leaderboard
-            leaderboard.push(newScoreEntry);
-
-            // Save the updated leaderboard back to AsyncStorage
-            await AsyncStorage.setItem('leaderboard', JSON.stringify(leaderboard));
-
-            // Optionally, update state if you're also keeping track of the leaderboard there
-            setLeaderboard(leaderboard);
+            if (!highScore.score || currentScore > highScore.score) {
+                const newHighScore = JSON.stringify({ score: currentScore, initials: playerInitials });
+                console.log("newHigh: ", newHighScore);
+                await AsyncStorage.setItem(highScoreKey, newHighScore);
+            }
         } catch (error) {
-            console.error('Error storing the score', error);
+            console.error('Error accessing highScore in AsyncStorage:', error);
         }
     };
 
+    const handleMatchFound = () => {
+        // Vibrate for 500 milliseconds
+        Vibration.vibrate(500);
+    };
 
-    const toggleFlip = (index) => {
-        if (isFlipped[index]) {
-            return; // Don't allow re-flipping already flipped cards
+
+    const toggleFlip = async (index) => {
+        await playFlipSound();
+        // Avoid flipping already matched or flipped cards
+        if (isFlipped[index] || matchedPairs.includes(cards[index])) {
+            return;
         }
+        
+        const newIsFlipped = [...isFlipped];
+        newIsFlipped[index] = !newIsFlipped[index];
+        setIsFlipped(newIsFlipped);
 
-        const flipped = [...isFlipped];
-        flipped[index] = !flipped[index];
-
-        if (lastFlippedIndex === null) {
+        if (lastFlippedIndex == null) {
+            // This is the first card to be flipped
             setLastFlippedIndex(index);
         } else {
-            if (cards[lastFlippedIndex] !== cards[index]) {
-                // No match found - schedule both cards to flip back over
-                const newTimeoutId = setTimeout(() => {
-                    const newFlipped = [...isFlipped];
-                    newFlipped[lastFlippedIndex] = false;
-                    newFlipped[index] = false;
-                    setIsFlipped(newFlipped);
-                }, 1000);
-
-                // Clear any previous timeout and set the new one
-                clearTimeout(timeoutId);
-                setTimeoutId(newTimeoutId);
-            } else {
+            // Another card has already been flipped, check for a match
+            if (cards[lastFlippedIndex] === cards[index]) {
                 // Match found
-                setMatchedPairs([...matchedPairs, cards[index]]);
-                if (matchedPairs.length === (numRows * numColumns) / 2) {
-                    // All pairs have been matched, the game is finished.
-                    storeScore(score);
-                }
-            }
-            setLastFlippedIndex(null);
-        }
+                handleMatchFound();
+                setMatchedPairs((prevMatchedPairs) => [...prevMatchedPairs, cards[index]]);
+                setScore((prevScore) => prevScore + 1); // Increment the score
 
-        setIsFlipped(flipped);
+                // Reset lastFlippedIndex for the next turn
+                setLastFlippedIndex(null);
+
+                // Check if all pairs are matched, considering the latest match
+                if ((matchedPairs.length + 1) * 2 >= numColumns * numRows) {
+                    // Game is finished
+                    setGameFinished(true);
+                }
+            } else {
+                // No match found, schedule both cards to flip back over
+                setTimeoutId(setTimeout(() => {
+                    newIsFlipped[lastFlippedIndex] = false;
+                    newIsFlipped[index] = false;
+                    setIsFlipped(newIsFlipped);
+                    setLastFlippedIndex(null);
+                }, 1000));
+            }
+        }
     };
+
+
+
+    useEffect(() => {
+        if (gameFinished) {
+            // Delay the prompt slightly to allow the last match to be visible
+            setTimeout(() => {
+                promptSaveScore();
+            }, 500);
+        }
+    }, [gameFinished]);
+
 
     return (
         <View style={styles.container}>
@@ -236,7 +326,7 @@ const GameBoard = () => {
             cards.map((card, index) => (
                 <Pressable
                     key={index}
-                    style={styles.cardContainer}
+                    style={cardContainerStyle}
                     onPress={() => toggleFlip(index)}
                     activeOpacity={1}
                 >
@@ -278,8 +368,8 @@ const styles = StyleSheet.create({
     },
     cardContainer: {
         margin: 5, // Margin around each card
-        width: Dimensions.get('window').width / numColumns - 30, // Width for each card
-        height: Dimensions.get('window').height / numRows - 30, // Height for each card
+        width: (Dimensions.get('window').width / numColumns) * 0.7, // 70% of the original width
+        height: (Dimensions.get('window').height / numRows) * 0.7, // 70% of the original height
         justifyContent: 'center', // Center content inside the card container
         alignItems: 'center', // Center content inside the card container
     },
